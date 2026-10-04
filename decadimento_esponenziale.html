@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulazione Decadimento Esponenziale</title>
+    <!-- Tailwind CSS per lo stile -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js per il grafico -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- MathJax per la renderizzazione della formula matematica (opzionale, ma rende più bella l'equazione) -->
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* bg-gray-100 */
+        }
+        #simulationCanvas {
+            width: 100%;
+            height: 100%;
+            background-color: #1f2937; /* bg-gray-800 */
+            border-radius: 0.5rem; /* rounded-lg */
+            box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+        }
+        .canvas-container {
+            aspect-ratio: 1 / 1;
+            width: 100%;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8 text-gray-800 min-h-screen flex flex-col items-center">
+
+    <div class="max-w-6xl w-full">
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-blue-900 mb-2">Decadimento Esponenziale</h1>
+            <p class="text-gray-600">Simulazione interattiva del decadimento radioattivo</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 bg-white p-6 rounded-xl shadow-lg">
+            
+            <!-- Colonna Sinistra: Simulazione Visiva -->
+            <div class="flex flex-col gap-4">
+                <h2 class="text-xl font-semibold text-center border-b pb-2">Fenomeno (Nuclei)</h2>
+                
+                <div class="canvas-container relative">
+                    <canvas id="simulationCanvas"></canvas>
+                    <!-- Contatore in sovraimpressione -->
+                    <div class="absolute top-2 left-2 text-white bg-black bg-opacity-50 px-2 py-1 rounded text-sm font-mono">
+                        Nuclei rimanenti: <span id="nucleiCount">0</span> / <span id="totalNucleiCount">0</span>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-lg border">
+                    <h3 class="font-medium mb-3">Impostazioni</h3>
+                    
+                    <div class="mb-3">
+                        <label for="initialNuclei" class="block text-sm font-medium text-gray-700 mb-1">Numero Iniziale (\(N_0\)): <span id="n0Value">500</span></label>
+                        <input type="range" id="initialNuclei" min="100" max="2000" step="100" value="500" class="w-full">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="decayRate" class="block text-sm font-medium text-gray-700 mb-1">Costante di decadimento (\(\lambda\)): <span id="lambdaValue">0.05</span></label>
+                        <input type="range" id="decayRate" min="0.01" max="0.2" step="0.01" value="0.05" class="w-full">
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-col gap-4">
+                <h2 class="text-xl font-semibold text-center border-b pb-2">Grafico e Equazione</h2>
+                
+                <!-- Equazione -->
+                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center text-lg shadow-inner">
+                    <p class="font-medium mb-2 text-blue-800">Legge del decadimento:</p>
+                    <div id="equationDisplay" class="text-2xl font-serif">
+                        <!-- Qui verrà inserita l'equazione generata dinamicamente -->
+                        \( N(t) = N_0 \cdot e^{-\lambda t} \)
+                    </div>
+                </div>
+
+                <!-- Contenitore del Grafico Chart.js -->
+                <div class="relative w-full h-64 md:h-80 bg-white border rounded-lg">
+                    <canvas id="decayChart"></canvas>
+                </div>
+
+                <div class="flex flex-wrap gap-2 justify-center mt-auto pt-4">
+                    <button id="btnStart" class="px-6 py-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded shadow transition-colors flex-1 min-w-[120px]">
+                        Avvia Simulazione
+                    </button>
+                    <button id="btnPause" class="px-6 py-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold rounded shadow transition-colors flex-1 min-w-[120px]" disabled>
+                        Pausa
+                    </button>
+                    <button id="btnReset" class="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded shadow transition-colors flex-1 min-w-[120px]">
+                        Resetta Tutto
+                    </button>
+                    <button id="btnShowCurve" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded shadow transition-colors w-full mt-2">
+                        Mostra Curva Teorica
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // -- Configurazione iniziale e Variabili di Stato --
+        const canvas = document.getElementById('simulationCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let animationId = null;
+        let isRunning = false;
+        let time = 0; // Tempo della simulazione
+        const timeStep = 0.1; // Quanto tempo passa ad ogni frame
+        
+        // Parametri fisici
+        let N0 = parseInt(document.getElementById('initialNuclei').value);
+        let lambda = parseFloat(document.getElementById('decayRate').value);
+        let currentNucleiCount = N0;
+
+        // Array per memorizzare i nuclei (posizione, stato)
+        let nuclei = [];
+
+        // -- Elementi UI --
+        const n0Label = document.getElementById('n0Value');
+        const lambdaLabel = document.getElementById('lambdaValue');
+        const countSpan = document.getElementById('nucleiCount');
+        const totalSpan = document.getElementById('totalNucleiCount');
+        
+        const btnStart = document.getElementById('btnStart');
+        const btnPause = document.getElementById('btnPause');
+        const btnReset = document.getElementById('btnReset');
+        const btnShowCurve = document.getElementById('btnShowCurve');
+        
+        const equationDisplay = document.getElementById('equationDisplay');
+
+        // -- Configurazione Grafico Chart.js --
+        const chartCtx = document.getElementById('decayChart').getContext('2d');
+        const decayChart = new Chart(chartCtx, {
+            type: 'line',
+            data: {
+                labels: [], // Tempi (asse X)
+                datasets: [
+                    {
+                        label: 'Dati Simulazione (Punti)',
+                        data: [], // Valori N(t) (asse Y)
+                        borderColor: 'rgba(59, 130, 246, 1)', // Blue-500
+                        backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                        borderWidth: 2,
+                        pointRadius: 3, // Mostra i punti
+                        showLine: false // Solo punti inizialmente
+                    },
+                    {
+                        label: 'Curva Teorica (Nascondibile)',
+                        data: [],
+                        borderColor: 'rgba(239, 68, 68, 0.8)', // Red-500
+                        borderWidth: 2,
+                        borderDash: [5, 5], // Linea tratteggiata
+                        pointRadius: 0, // Nessun punto sulla linea
+                        fill: false,
+                        hidden: true // Nascosta di default
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false, // Disabilita animazioni chart.js per migliori performance in real-time
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Tempo (t)' },
+                        min: 0,
+                        max: 100 // Valore indicativo, si aggiornerà se necessario
+                    },
+                    y: {
+                        title: { display: true, text: 'Numero di Nuclei (N)' },
+                        min: 0,
+                        max: N0,
+                        beginAtZero: true
+                    }
+                },
+                plugins: {
+                    legend: { position: 'top' }
+                }
+            }
+        });
+
+        // -- Funzioni di supporto --
+        
+        function updateEquation() {
+            const eqString = `\\( N(t) = ${N0} \\cdot e^{-${lambda.toFixed(3)} t} \\)`;
+            equationDisplay.innerHTML = eqString;
+            // Richiede a MathJax di ri-renderizzare la formula se già caricato
+            if (window.MathJax && window.MathJax.typesetPromise) {
+                MathJax.typesetPromise([equationDisplay]).catch(function (err) {
+                    console.log('MathJax error: ', err.message);
+                });
+            }
+        }
+
+        function initCanvas() {
+            // Imposta risoluzione reale del canvas per evitare sfocature
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            
+            nuclei = [];
+            currentNucleiCount = N0;
+            totalSpan.textContent = N0;
+            countSpan.textContent = currentNucleiCount;
+
+            const padding = 10;
+            const availableWidth = canvas.width - padding * 2;
+            const availableHeight = canvas.height - padding * 2;
+            
+            // Stima raggio in base a quanti nuclei dobbiamo farci stare
+            // Area = w*h. Area per nucleo = Area / N. raggio ~ sqrt(Area_nucleo)/2
+            const maxRadius = 4;
+            const estimatedAreaPerNucleus = (availableWidth * availableHeight) / N0;
+            const radius = Math.min(maxRadius, Math.max(1, Math.sqrt(estimatedAreaPerNucleus) / 2.5));
+
+            // Genera posizioni casuali per i nuclei
+            for (let i = 0; i < N0; i++) {
+                nuclei.push({
+                    x: padding + radius + Math.random() * (availableWidth - radius * 2),
+                    y: padding + radius + Math.random() * (availableHeight - radius * 2),
+                    r: radius,
+                    decayed: false // Stato: falso=attivo (blu), vero=decaduto (grigio/trasparente)
+                });
+            }
+            drawCanvas();
+        }
+
+        function drawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            for (let i = 0; i < nuclei.length; i++) {
+                const n = nuclei[i];
+                ctx.beginPath();
+                ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+                
+                if (n.decayed) {
+                    // Nucleo decaduto
+                    ctx.fillStyle = 'rgba(75, 85, 99, 0.3)'; // gray-600 trasparente
+                    ctx.strokeStyle = 'rgba(75, 85, 99, 0.1)';
+                } else {
+                    // Nucleo attivo
+                    ctx.fillStyle = '#3b82f6'; // blue-500
+                    ctx.strokeStyle = '#2563eb'; // blue-600
+                }
+                
+                ctx.fill();
+                if(n.r > 2) ctx.stroke(); // Bordo solo se non troppo piccoli
+            }
+        }
+
+        function calculateTheoreticalCurve() {
+            const dataPoints = [];
+            // Calcola punti fino a t=100 o finché N non è quasi zero
+            const maxT = 100; // Asse x di default
+            for (let t = 0; t <= maxT; t += 1) {
+                const theoreticalN = N0 * Math.exp(-lambda * t);
+                dataPoints.push({x: t, y: theoreticalN});
+            }
+            return dataPoints;
+        }
+
+        function simulationStep() {
+            if (!isRunning) return;
+
+            // Incrementa il tempo
+            time += timeStep;
+            
+            // 1. Logica di decadimento (approccio Monte Carlo)
+            // La probabilità che un nucleo decada nel tempo dt è P = lambda * dt
+            const decayProbability = lambda * timeStep;
+            let newlyDecayed = 0;
+
+            for (let i = 0; i < nuclei.length; i++) {
+                if (!nuclei[i].decayed) {
+                    // Genera un numero casuale tra 0 e 1. Se minore della probabilità, decade.
+                    if (Math.random() < decayProbability) {
+                        nuclei[i].decayed = true;
+                        newlyDecayed++;
+                    }
+                }
+            }
+
+            currentNucleiCount -= newlyDecayed;
+            countSpan.textContent = currentNucleiCount;
+
+            // 2. Aggiorna Grafica (Canvas)
+            drawCanvas();
+
+            // 3. Aggiorna Grafico (Chart.js)
+            // Aggiungo un punto al grafico circa ogni 'unità' di tempo per non intasarlo
+            // Usiamo il tempo arrotondato, o controlliamo se abbiamo superato il limite intero precedente
+            const currentIntTime = Math.floor(time);
+            const lastDataLabel = decayChart.data.labels[decayChart.data.labels.length - 1];
+            
+            // Se non c'è label o siamo in un nuovo istante intero
+            if (lastDataLabel === undefined || currentIntTime > lastDataLabel) {
+                decayChart.data.labels.push(currentIntTime);
+                decayChart.data.datasets[0].data.push(currentNucleiCount);
+                
+                // Se superiamo l'asse X, lo allarghiamo (scroll automatico o riscalamento)
+                if (currentIntTime >= decayChart.options.scales.x.max) {
+                     decayChart.options.scales.x.max += 20;
+                }
+                
+                decayChart.update();
+            }
+
+            // Ferma la simulazione se tutti sono decaduti
+            if (currentNucleiCount <= 0) {
+                stopSimulation();
+            } else {
+                // Richiedi prossimo frame
+                animationId = requestAnimationFrame(simulationStep);
+            }
+        }
+
+        function startSimulation() {
+            if (!isRunning) {
+                isRunning = true;
+                btnStart.classList.add('hidden');
+                btnPause.classList.remove('hidden');
+                btnPause.disabled = false;
+                
+                // Disabilita input durante simulazione
+                document.getElementById('initialNuclei').disabled = true;
+                document.getElementById('decayRate').disabled = true;
+
+                // Se partiamo da zero, aggiungiamo il primo punto a t=0
+                if (time === 0) {
+                     decayChart.data.labels.push(0);
+                     decayChart.data.datasets[0].data.push(N0);
+                     decayChart.update();
+                }
+
+                animationId = requestAnimationFrame(simulationStep);
+            }
+        }
+
+        function stopSimulation() {
+            isRunning = false;
+            cancelAnimationFrame(animationId);
+            btnStart.classList.remove('hidden');
+            btnStart.textContent = "Riprendi";
+            btnPause.classList.add('hidden');
+        }
+
+        function resetSimulation() {
+            stopSimulation();
+            btnStart.textContent = "Avvia Simulazione";
+            
+            // Riabilita input
+            document.getElementById('initialNuclei').disabled = false;
+            document.getElementById('decayRate').disabled = false;
+
+            // Aggiorna valori da slider
+            N0 = parseInt(document.getElementById('initialNuclei').value);
+            lambda = parseFloat(document.getElementById('decayRate').value);
+            
+            time = 0;
+            
+            // Resetta grafico
+            decayChart.data.labels = [];
+            decayChart.data.datasets[0].data = [];
+            // Nascondi curva teorica al reset, o aggiornala
+            decayChart.data.datasets[1].data = []; 
+            decayChart.data.datasets[1].hidden = true;
+            btnShowCurve.textContent = "Mostra Curva Teorica";
+            
+            decayChart.options.scales.y.max = N0;
+            decayChart.options.scales.x.max = 100; // Reset asse x
+            decayChart.update();
+
+            updateEquation();
+            initCanvas();
+        }
+
+        document.getElementById('initialNuclei').addEventListener('input', (e) => {
+            n0Label.textContent = e.target.value;
+            if(!isRunning && time === 0) resetSimulation(); // Aggiorna se non in esecuzione
+        });
+
+        document.getElementById('decayRate').addEventListener('input', (e) => {
+            lambdaLabel.textContent = e.target.value;
+            if(!isRunning && time === 0) resetSimulation();
+        });
+
+        btnStart.addEventListener('click', startSimulation);
+        btnPause.addEventListener('click', stopSimulation);
+        btnReset.addEventListener('click', resetSimulation);
+
+        btnShowCurve.addEventListener('click', () => {
+            const isHidden = decayChart.data.datasets[1].hidden;
+            
+            if (isHidden) {
+                // Calcola e mostra
+                const theoreticalData = calculateTheoreticalCurve();
+                // Riformattiamo i dati per Chart.js (serve l'asse x coincidente o usare formato punto {x,y})
+                // Chart.js per line chart con scale lineari base accetta anche array semplici se le label combaciano,
+                // ma per sovrapporre una funzione continua su punti discreti in tempo reale è meglio passare {x,y}.
+                
+                decayChart.data.datasets[1].data = theoreticalData;
+                decayChart.data.datasets[1].hidden = false;
+                
+                // Opzionale: mostra la linea unendola (cambiamo configurazione per questo dataset)
+                decayChart.data.datasets[0].showLine = false; // Punti sim
+                decayChart.data.datasets[1].showLine = true;  // Linea teorica
+                
+                btnShowCurve.textContent = "Nascondi Curva Teorica";
+                btnShowCurve.classList.replace('bg-blue-600', 'bg-gray-600');
+                btnShowCurve.classList.replace('hover:bg-blue-700', 'hover:bg-gray-700');
+            } else {
+                // Nascondi
+                decayChart.data.datasets[1].hidden = true;
+                btnShowCurve.textContent = "Mostra Curva Teorica";
+                btnShowCurve.classList.replace('bg-gray-600', 'bg-blue-600');
+                btnShowCurve.classList.replace('hover:bg-gray-700', 'hover:bg-blue-700');
+            }
+            decayChart.update();
+        });
+
+        window.addEventListener('resize', () => {
+            if(!isRunning) {
+                initCanvas(); // Ridisegna correttamente se ridimensioniamo
+            }
+            // Chart.js si gestisce da solo grazie a responsive:true
+        });
+
+        window.onload = () => {
+            resetSimulation(); // Inizializza tutto basato sui valori HTML iniziali
+        };
+
+    </script>
+</body>
+</html>
